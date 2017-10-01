@@ -1,4 +1,5 @@
 import json
+import re
 import unicodedata
 import pandas as pd
 import nltk
@@ -133,17 +134,15 @@ class Tweet_train:
                 need = 0
                 avail = 0
                 for i in range(0, no_of_tweets):
-                        data = tweets[i]
+                        data = tweets[i]                        
                         tweet_text = data['text']
                         tweet_id = str(data['id'])
                         
                         if tweet_id in tweet_id_need:
-                                data['type'] = 'need'                               
-                                #tweet_text.append(" #need")
+                                data['type'] = 'need'         
                                 need += 1
                         elif tweet_id in tweet_id_avail:
                                 data['type'] = 'availability'
-                                #tweet_text.append(" #availability")
                                 avail += 1
                         else:
                                 data['type'] = 'none'
@@ -158,15 +157,20 @@ class Tweet_train:
                 for index in range(no_of_tweets):
                         data = tweets[index]
                         if index < 0.7*no_of_tweets:
-                                #data['text'] = nltk.word_tokenize(data['text'].lower()
                                 train_tweets.append(data)
                         else:
-                                #data['text'] = nltk.word_tokenize(data['text'].lower()
                                 test_tweets.append((data))
                         #remove stopwords
-                #train_tweets = [(tweet[0], [ word for word in tweet[1] if word not in stopwords.words('english')], tweet[2]) for tweet in train_tweets]
                 return train_tweets, test_tweets
         
+        def remove_urls(self, tweets):
+                for i in range(len(tweets)):
+                        data = tweets[i]
+                        tweet_text = data['text']
+                        data['text'] = re.sub(r"http\S+", "", tweet_text)
+                        #print data['text']
+                return tweets
+                
         def tokenise_data(self, tweet_data):
                 tokens = nltk.word_tokenize(tweet_data.lower())
                 return tokens
@@ -175,50 +179,49 @@ class Tweet_train:
                 unicodedata.normalize('NFKD', data).encode('ascii', 'ignore')
                 return data
         
-        def process_data(self, tweets):
+        def process_data(self, data):                
+                processed_text = []                
+                tokens = self.tokenise_data(data['text'])                       
+                #remove stopwords
+                for word in tokens:
+                        word = self.normalize(word)                                
+                        if word not in stopwords.words('english'):
+                                
+                                word = word.strip('\'":;/ ?,.#@')
+                                #print word
+                                processed_text.append(word)
+                
+                #print data['id']
+                #print processed_text
+                return processed_text
+                
+        
+        def get_feature_vector(self, tweets):
+                featureVector = []
                 for i in range(len(tweets)):
                         data = tweets[i]
-                        processed_text = []
-                        tokens = self.tokenise_data(data['text'])                       
-                        #remove stopwords
-                        for word in tokens:
-                                word = self.normalize(word)                                
-                                if word not in stopwords.words('english'):
-                                        print word
-                                        processed_text.append(word)
-                        print data['id']
-                        print processed_text
-                
-        def get_word_features(self, tweets):
-                all_words = []
-                featureVector= []
-                for(words, sentiments) in tweets:
-                        all_words.extend(words)            
-                wordlist = nltk.FreqDist(all_words)
-                wordlist = wordlist.most_common()
-                word_features = [word[0] for word in wordlist]
-                words = word_features.split()
-                for w in words:
-                        #replace two or more with two occurrences
-                        w = replaceTwoOrMore(w)
-                        #strip punctuation
-                        w = w.strip('\'"?,.')
-                        #check if the word stats with a hashtag
-                        val = re.search(r"^[#][a-zA-Z0-9]*$", w)
-                        #ignore if it is a stop word
-                        if(w in stopWords or val is None):
-                                continue
-                        else:
-                                featureVector.append(w.lower())
+                        processed_text = self.process_data(data)
+                        all_words = []
+                        temp = []
+                        #for words in processed_text:
+                        all_words.extend(processed_text)
+                        wordlist = nltk.FreqDist(all_words)
+                        wordlist = wordlist.most_common()
+                        #Wordlist contains all words removing stopwords and urls and corresponding frequency
+                        for word in wordlist:
+                                temp.append(word[0])
+                        print temp
+                        featureVector.append(temp)
+                #print featureVector
                 return featureVector
-                
+                       
+      
         def print_feature_vectors(self, tweets):
-                for tweet in tweets:
-                        
-                        print self.get_word_features(tweet)
-                        
-        
-        
+                for tweet in tweets:                        
+                        print self.get_feature_vector(tweet)
+                                
+        def extract_features(self, document):
+                return  {'contains(%s)'% word: (word in set(document)) for word in all_together_word_list}         
       
                         
 
@@ -235,6 +238,7 @@ need_tweet_IDs = mObj.read_id('/home/pratyusha/Documents/DeepLearning/Fire2017-I
 avail_tweet_IDs = mObj.read_id('/home/pratyusha/Documents/DeepLearning/Fire2017-IRMiDis-data/development-set-directory/NepalQuake-availability-tweetids-development-set.txt')
 tweet_array = pObj.json_parser('/home/pratyusha/Documents/DeepLearning/Fire2017-IRMiDis-data/microblogs-crawl-directory/NepalQuake-code-mixed-training-tweets.jsonl')
 #return filtered tweets:
+tweet_array = trainObj.remove_urls(tweet_array)
 tweets=mObj.filter_tweets(tweet_array)
 Y = mObj.generate_output(tweets, need_tweet_IDs, avail_tweet_IDs)
 #print Y   
@@ -244,4 +248,32 @@ trainObj.label_tweets(tweets, need_tweet_IDs, avail_tweet_IDs)
 mObj.print_tweet_data(tweets)
 train_tweets, test_tweets = trainObj.divide_tweets(tweets)
 
-trainObj.process_data(train_tweets)
+
+
+
+
+
+
+
+#SEE CLASS TWEET_TRAIN 
+#THIS PART DOESN'T WORK:
+
+
+
+word_features = trainObj.get_feature_vector(train_tweets)
+training_set = nltk.classify.apply_features(trainObj.extract_features, train_tweets)
+test_set = nltk.classify.apply_features(trainObj.extract_features, test_tweets)
+
+print("beginning training of trainer")
+classifier = nltk.NaiveBayesClassifier.train(training_set)
+
+print("saving classifier")
+file = open('classify/trump_classifier.pickle', 'wb')
+pickle.dump(classifier, file, -1)
+file.close()
+file = open('classify/trump_classifier_features.pickle', 'wb')
+pickle.dump(word_features, file, -1)
+file.close()
+
+print("accuracy test")
+print(nltk.classify.accuracy(classifier, test_set))
